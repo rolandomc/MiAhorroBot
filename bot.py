@@ -127,71 +127,9 @@ def get_unique_random_number(user_id):
     available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
     return random.choice(available_numbers) if available_numbers else None
 
-# Comando /start con menú interactivo
-async def start(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
-    keyboard = [
-        [InlineKeyboardButton("Ingresar número manualmente", callback_data=f"ingresar_numero_{user_id}")],
-        [InlineKeyboardButton("Ver total ahorrado", callback_data=f"ver_historial_{user_id}")],
-        [InlineKeyboardButton("Generar número aleatorio", callback_data=f"generar_numero_{user_id}")],
-        [InlineKeyboardButton("Programar mensajes diarios", callback_data=f"programar_mensajes_{user_id}")],
-        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data=f"confirmar_borrar_{user_id}")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`\nElige una opción:", reply_markup=reply_markup)
-
-# Manejo de botones del menú
-async def button(update: Update, context: CallbackContext):
-    query = update.callback_query
-    await query.answer()
-
-    user_id = query.message.chat_id
-
-    if f"ingresar_numero_{user_id}" in query.data:
-        await query.message.reply_text("✍ Ingresa un número para guardarlo en el ahorro:")
-    elif f"ver_historial_{user_id}" in query.data:
-        total = get_total_savings(user_id)
-        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
-    elif f"generar_numero_{user_id}" in query.data:
-        amount = get_unique_random_number(user_id)
-        if amount is not None:
-            save_savings(user_id, amount)
-            total = get_total_savings(user_id)
-            await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado. Total acumulado: {total} pesos.")
-        else:
-            await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
-    elif f"confirmar_borrar_{user_id}" in query.data:
-        await query.message.reply_text(f"⚠️ ¿Estás seguro de que quieres borrar todos tus ahorros? Escribe `CONFIRMAR {user_id}` para proceder.")
-    elif f"borrar_datos_{user_id}" in query.data:
-        delete_user_savings(user_id)
-        await query.message.reply_text("✅ Se han eliminado todos tus ahorros.")
-
-# Capturar confirmación de eliminación
-async def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
-    text = update.message.text
-
-    if text == f"CONFIRMAR {user_id}":
-        delete_user_savings(user_id)
-        await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
-    else:
-        await update.message.reply_text("⚠️ Comando no reconocido. Usa `/start` para ver las opciones.")
-
-# Iniciar el bot
-if __name__ == "__main__":
-    logging.info("🚀 Iniciando el bot de ahorro...")
-    init_db()
-
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    app.run_polling()
-    
 # Capturar números ingresados manualmente y verificar si ya existen
 async def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
+    user_id = update.message.chat.id
     text = update.message.text.strip()
 
     # Dividir los números ingresados por comas y eliminar espacios
@@ -226,3 +164,15 @@ async def handle_message(update: Update, context: CallbackContext):
         response += f"⚠️ Estos números ya estaban guardados o no son válidos: {', '.join(map(str, ignored_numbers))}."
 
     await update.message.reply_text(response)
+
+# Iniciar el bot
+if __name__ == "__main__":
+    logging.info("🚀 Iniciando el bot de ahorro...")
+    init_db()
+
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))  # <-- Se corrige el filtro aquí
+
+    app.run_polling()
