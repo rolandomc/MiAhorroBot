@@ -9,6 +9,8 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Updater, Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
 from urllib.parse import urlparse
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+
 
 
 DB_URL = os.getenv("DATABASE_URL")
