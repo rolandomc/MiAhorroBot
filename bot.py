@@ -69,12 +69,16 @@ def save_savings(user_id, amount):
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", (user_id, datetime.now().date(), amount))
+            cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
+                           (user_id, datetime.now().date(), amount))
             conn.commit()
             conn.close()
             logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
+        else:
+            logging.error(f"❌ No se pudo conectar a la base de datos.")
     except Exception as e:
         logging.error(f"❌ Error al guardar el ahorro para el usuario {user_id}: {e}")
+
 
 # Obtener el total ahorrado por usuario
 def get_total_savings(user_id):
@@ -89,6 +93,7 @@ def get_total_savings(user_id):
     except Exception as e:
         logging.error(f"❌ Error al obtener el total ahorrado para el usuario {user_id}: {e}")
         return 0
+
 
 # Obtener números guardados por usuario
 def get_savings(user_id):
@@ -126,24 +131,20 @@ async def start(update: Update, context: CallbackContext):
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
+    
+    user_id = query.message.chat_id  # Obtener ID del usuario
 
-    user_id = query.message.chat_id
-
-    if f"ingresar_numero_{user_id}" in query.data:
-        await query.message.reply_text("✍ Ingresa un número para guardarlo en el ahorro:")
-    elif f"ver_historial_{user_id}" in query.data:
-        total = get_total_savings(user_id)
-        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
-    elif f"generar_numero_{user_id}" in query.data:
+    if "generar_numero" in query.data:
         amount = get_unique_random_number(user_id)
         if amount is not None:
-            save_savings(user_id, amount)
+            save_savings(user_id, amount)  # Asegurar que se guarda con user_id
             total = get_total_savings(user_id)
             await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado. Total acumulado: {total} pesos.")
         else:
             await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
-    elif f"programar_mensajes_{user_id}" in query.data:
-        await query.message.reply_text("⏰ Escribe la hora en formato 24H (ejemplo: 08:00 para 8 AM o 18:30 para 6:30 PM):")
+    elif "ver_historial" in query.data:
+        total = get_total_savings(user_id)
+        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
