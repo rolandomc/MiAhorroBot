@@ -89,6 +89,21 @@ def save_savings(amount):
     except Exception as e:
         logging.error(f"❌ Error al guardar el ahorro: {e}")
 
+# Obtener el historial de ahorros
+def get_savings():
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT amount FROM savings ORDER BY date DESC")
+            data = cursor.fetchall()
+            conn.close()
+            return [x[0] for x in data]  # Convertir lista de tuplas a lista de números
+    except Exception as e:
+        logging.error(f"❌ Error al obtener el historial de ahorros: {e}")
+        return []
+
+
 # Obtener el total ahorrado
 def get_total_savings():
     try:
@@ -122,12 +137,16 @@ async def start(update: Update, context: CallbackContext):
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
+
     if query.data == "ingresar_numero":
         await query.message.reply_text("✍ Ingresa un número para guardarlo en el ahorro:")
     elif query.data == "ver_historial":
         savings = get_savings()
-        message = "📜 Historial de ahorro:\n" + "\n".join([f"💰 {amount} pesos" for amount in savings])
+        message = "📜 Historial de ahorro:\n"
+        for amount in savings:
+            message += f"💰 {amount} pesos\n"
         await query.message.reply_text(message if savings else "📌 Aún no has registrado ahorros.")
+
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
