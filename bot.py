@@ -44,24 +44,27 @@ def connect_db():
         return None
 
 # Inicializar la base de datos con user_id
+# Inicializar la base de datos con user_id
 def init_db():
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS savings (
+                DROP TABLE IF EXISTS savings;
+                CREATE TABLE savings (
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
                     date DATE NOT NULL,
                     amount INTEGER NOT NULL
-                )
+                );
             ''')
             conn.commit()
             conn.close()
             logging.info("✅ Base de datos inicializada correctamente.")
     except Exception as e:
         logging.error(f"❌ Error al inicializar la base de datos: {e}")
+
 
 # Guardar número en la base de datos para un usuario específico
 def save_savings(user_id, amount):
