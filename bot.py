@@ -188,3 +188,41 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     app.run_polling()
+    
+# Capturar números ingresados manualmente y verificar si ya existen
+async def handle_message(update: Update, context: CallbackContext):
+    user_id = update.message.chat_id
+    text = update.message.text.strip()
+
+    # Dividir los números ingresados por comas y eliminar espacios
+    numbers = text.split(",")
+    numbers = [num.strip() for num in numbers if num.strip().isdigit()]
+
+    if not numbers:
+        await update.message.reply_text("⚠️ Ingresa uno o varios números válidos separados por comas.")
+        return
+
+    existing_numbers = get_savings(user_id)
+    saved_numbers = []
+    ignored_numbers = []
+
+    for num in numbers:
+        amount = int(num)
+        if 1 <= amount <= 365:
+            if amount not in existing_numbers:
+                save_savings(user_id, amount)
+                saved_numbers.append(amount)
+            else:
+                ignored_numbers.append(amount)
+        else:
+            ignored_numbers.append(amount)
+
+    # Mensajes de respuesta
+    response = ""
+    if saved_numbers:
+        total = get_total_savings(user_id)
+        response += f"✅ Se han guardado: {', '.join(map(str, saved_numbers))} pesos. Total acumulado: {total} pesos.\n"
+    if ignored_numbers:
+        response += f"⚠️ Estos números ya estaban guardados o no son válidos: {', '.join(map(str, ignored_numbers))}."
+
+    await update.message.reply_text(response)
