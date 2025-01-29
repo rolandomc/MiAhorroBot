@@ -9,6 +9,14 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
+DB_URL = os.getenv("DATABASE_URL")
+
+if not DB_URL:
+    raise ValueError("⚠️ ERROR: La variable de entorno DATABASE_URL no está configurada correctamente.")
+
+print(f"🌐 URL de conexión a PostgreSQL: {DB_URL}")
+
+
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO)
 
