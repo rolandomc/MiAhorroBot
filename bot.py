@@ -1,4 +1,4 @@
-import os
+import os 
 import logging
 import psycopg2
 import schedule
@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 
 # Obtener las variables de entorno
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_URL = os.getenv("DATABASE_URL")
 
 # Verificar que las variables estén configuradas
@@ -52,7 +53,6 @@ def init_db():
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS savings (
                     id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
                     date DATE NOT NULL,
                     amount INTEGER NOT NULL
                 )
@@ -63,104 +63,114 @@ def init_db():
     except Exception as e:
         logging.error(f"❌ Error al inicializar la base de datos: {e}")
 
-# Guardar número en la base de datos para un usuario específico
-def save_savings(user_id, amount):
+# Guardar número en la base de datos
+def save_savings(amount):
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
-                           (user_id, datetime.now().date(), amount))
+            cursor.execute("INSERT INTO savings (date, amount) VALUES (%s, %s)", (datetime.now().date(), amount))
             conn.commit()
             conn.close()
-            logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
-        else:
-            logging.error(f"❌ No se pudo conectar a la base de datos.")
+            logging.info(f"✅ Ahorro de {amount} guardado correctamente.")
     except Exception as e:
-        logging.error(f"❌ Error al guardar el ahorro para el usuario {user_id}: {e}")
+        logging.error(f"❌ Error al guardar el ahorro: {e}")
 
-
-# Obtener el total ahorrado por usuario
-def get_total_savings(user_id):
+# Obtener el total ahorrado
+def get_total_savings():
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM savings WHERE user_id = %s", (user_id,))
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM savings")
             total = cursor.fetchone()[0]
             conn.close()
             return total
     except Exception as e:
-        logging.error(f"❌ Error al obtener el total ahorrado para el usuario {user_id}: {e}")
+        logging.error(f"❌ Error al obtener el total ahorrado: {e}")
         return 0
 
-
-# Obtener números guardados por usuario
-def get_savings(user_id):
+# Obtener números guardados
+def get_savings():
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT amount FROM savings WHERE user_id = %s ORDER BY date DESC", (user_id,))
+            cursor.execute("SELECT amount FROM savings ORDER BY date DESC")
             data = cursor.fetchall()
             conn.close()
             return [x[0] for x in data]
     except Exception as e:
-        logging.error(f"❌ Error al obtener el historial de ahorros para el usuario {user_id}: {e}")
+        logging.error(f"❌ Error al obtener el historial de ahorros: {e}")
         return []
 
-# Generar un número aleatorio que no se repita por usuario
-def get_unique_random_number(user_id):
-    saved_numbers = get_savings(user_id)
+# Generar un número aleatorio que no se repita
+def get_unique_random_number():
+    saved_numbers = get_savings()
     available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
     return random.choice(available_numbers) if available_numbers else None
 
 # Comando /start con menú interactivo
 async def start(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
     keyboard = [
-        [InlineKeyboardButton("Ingresar número manualmente", callback_data=f"ingresar_numero_{user_id}")],
-        [InlineKeyboardButton("Ver total ahorrado", callback_data=f"ver_historial_{user_id}")],
-        [InlineKeyboardButton("Generar número aleatorio", callback_data=f"generar_numero_{user_id}")],
-        [InlineKeyboardButton("Programar mensajes diarios", callback_data=f"programar_mensajes_{user_id}")]
+        [InlineKeyboardButton("Ingresar número manualmente", callback_data="ingresar_numero")],
+        [InlineKeyboardButton("Ver total ahorrado", callback_data="ver_historial")],
+        [InlineKeyboardButton("Generar número aleatorio", callback_data="generar_numero")],
+        [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`\nElige una opción:", reply_markup=reply_markup)
+    await update.message.reply_text("📌 Bienvenido al Bot de Ahorro 💰\n\nElige una opción:", reply_markup=reply_markup)
 
 # Manejo de botones del menú
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
-    
-    user_id = query.message.chat_id  # Obtener ID del usuario
 
-    if "generar_numero" in query.data:
-        amount = get_unique_random_number(user_id)
+    if query.data == "ingresar_numero":
+        await query.message.reply_text("✍ Ingresa un número para guardarlo en el ahorro:")
+    elif query.data == "ver_historial":
+        total = get_total_savings()
+        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
+    elif query.data == "generar_numero":
+        amount = get_unique_random_number()
         if amount is not None:
-            save_savings(user_id, amount)  # Asegurar que se guarda con user_id
-            total = get_total_savings(user_id)
+            save_savings(amount)
+            total = get_total_savings()
             await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado. Total acumulado: {total} pesos.")
         else:
             await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
-    elif "ver_historial" in query.data:
-        total = get_total_savings(user_id)
-        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
+    elif query.data == "programar_mensajes":
+        await query.message.reply_text("⏰ Escribe la hora en formato 24H (ejemplo: 08:00 para 8 AM o 18:30 para 6:30 PM):")
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.chat_id
     text = update.message.text
-
-    try:
-        amount = int(text)
-        if 1 <= amount <= 365:
-            save_savings(user_id, amount)
-            total = get_total_savings(user_id)
+    if ":" in text:  # Si el usuario ingresa una hora para programar los mensajes
+        try:
+            schedule.every().day.at(text).do(lambda: context.application.create_task(daily_savings()))
+            await update.message.reply_text(f"✅ Mensajes programados a las {text} diariamente.")
+        except Exception as e:
+            await update.message.reply_text("⚠️ Formato de hora inválido. Usa HH:MM (ejemplo: 08:00).")
+    else:  # Guardar un número manualmente
+        try:
+            amount = int(text)
+            if amount < 1 or amount > 365:
+                await update.message.reply_text("⚠️ Ingresa un número entre 1 y 365.")
+                return
+            save_savings(amount)
+            total = get_total_savings()
             await update.message.reply_text(f"✅ Se ha guardado {amount} pesos. Total acumulado: {total} pesos.")
-        else:
-            await update.message.reply_text("⚠️ Ingresa un número entre 1 y 365.")
-    except ValueError:
-        await update.message.reply_text("⚠️ Ingresa un número válido.")
+        except ValueError:
+            await update.message.reply_text("⚠️ Ingresa un número válido.")
+
+# Enviar número aleatorio diario
+async def daily_savings():
+    amount = get_unique_random_number()
+    if amount is not None:
+        save_savings(amount)
+        total = get_total_savings()
+        bot = app.bot
+        await bot.send_message(chat_id=CHAT_ID, text=f"💰 Hoy debes ahorrar: {amount} pesos\n📊 Acumulado total: {total} pesos.")
 
 # Iniciar el bot
 if __name__ == "__main__":
