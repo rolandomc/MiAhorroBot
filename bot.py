@@ -7,7 +7,9 @@ import threading
 import random
 from datetime import datetime
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Updater, Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
+from urllib.parse import urlparse
+
 
 DB_URL = os.getenv("DATABASE_URL")
 
@@ -35,9 +37,12 @@ print(f"🌐 URL de conexión a PostgreSQL: {DB_URL}")
 # Función para conectar a PostgreSQL
 def connect_db():
     try:
+        if not DB_URL:
+            raise ValueError("⚠️ ERROR: La variable de entorno DATABASE_URL no está configurada.")
+
         result = urlparse(DB_URL)
         conn = psycopg2.connect(
-            database=result.path[1:],
+            database=result.path[1:],  # Corregido: Obtener el nombre de la base de datos sin '/'
             user=result.username,
             password=result.password,
             host=result.hostname,
