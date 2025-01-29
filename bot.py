@@ -44,27 +44,24 @@ def connect_db():
         return None
 
 # Inicializar la base de datos con user_id
-# Inicializar la base de datos con user_id
 def init_db():
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
             cursor.execute('''
-                DROP TABLE IF EXISTS savings;
-                CREATE TABLE savings (
+                CREATE TABLE IF NOT EXISTS savings (
                     id SERIAL PRIMARY KEY,
                     user_id BIGINT NOT NULL,
                     date DATE NOT NULL,
                     amount INTEGER NOT NULL
-                );
+                )
             ''')
             conn.commit()
             conn.close()
             logging.info("✅ Base de datos inicializada correctamente.")
     except Exception as e:
         logging.error(f"❌ Error al inicializar la base de datos: {e}")
-
 
 # Guardar número en la base de datos para un usuario específico
 def save_savings(user_id, amount):
@@ -75,6 +72,7 @@ def save_savings(user_id, amount):
             cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
                            (user_id, datetime.now().date(), amount))
             conn.commit()
+            cursor.close()
             conn.close()
             logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
     except Exception as e:
@@ -88,6 +86,7 @@ def get_total_savings(user_id):
             cursor = conn.cursor()
             cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM savings WHERE user_id = %s", (user_id,))
             total = cursor.fetchone()[0]
+            cursor.close()
             conn.close()
             return total
     except Exception as e:
@@ -108,6 +107,20 @@ def get_savings(user_id):
         logging.error(f"❌ Error al obtener el historial de ahorros para el usuario {user_id}: {e}")
         return []
 
+# Eliminar todos los registros de ahorro de un usuario
+def delete_user_savings(user_id):
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM savings WHERE user_id = %s", (user_id,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            logging.info(f"🗑️ Se eliminaron todos los ahorros del usuario {user_id}.")
+    except Exception as e:
+        logging.error(f"❌ Error al eliminar los ahorros del usuario {user_id}: {e}")
+
 # Generar un número aleatorio que no se repita por usuario
 def get_unique_random_number(user_id):
     saved_numbers = get_savings(user_id)
@@ -121,7 +134,8 @@ async def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("Ingresar número manualmente", callback_data=f"ingresar_numero_{user_id}")],
         [InlineKeyboardButton("Ver total ahorrado", callback_data=f"ver_historial_{user_id}")],
         [InlineKeyboardButton("Generar número aleatorio", callback_data=f"generar_numero_{user_id}")],
-        [InlineKeyboardButton("Programar mensajes diarios", callback_data=f"programar_mensajes_{user_id}")]
+        [InlineKeyboardButton("Programar mensajes diarios", callback_data=f"programar_mensajes_{user_id}")],
+        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data=f"confirmar_borrar_{user_id}")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`\nElige una opción:", reply_markup=reply_markup)
@@ -146,28 +160,22 @@ async def button(update: Update, context: CallbackContext):
             await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado. Total acumulado: {total} pesos.")
         else:
             await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
-    elif f"programar_mensajes_{user_id}" in query.data:
-        await query.message.reply_text("⏰ Escribe la hora en formato 24H (ejemplo: 08:00 para 8 AM o 18:30 para 6:30 PM):")
+    elif f"confirmar_borrar_{user_id}" in query.data:
+        await query.message.reply_text(f"⚠️ ¿Estás seguro de que quieres borrar todos tus ahorros? Escribe `CONFIRMAR {user_id}` para proceder.")
+    elif f"borrar_datos_{user_id}" in query.data:
+        delete_user_savings(user_id)
+        await query.message.reply_text("✅ Se han eliminado todos tus ahorros.")
 
-# Capturar números ingresados manualmente y verificar si ya existen
+# Capturar confirmación de eliminación
 async def handle_message(update: Update, context: CallbackContext):
     user_id = update.message.chat_id
     text = update.message.text
 
-    try:
-        amount = int(text)
-        if 1 <= amount <= 365:
-            existing_numbers = get_savings(user_id)
-            if amount in existing_numbers:
-                await update.message.reply_text("⚠️ Este número ya ha sido guardado. Ingresa otro número entre 1 y 365.")
-                return
-            save_savings(user_id, amount)
-            total = get_total_savings(user_id)
-            await update.message.reply_text(f"✅ Se ha guardado {amount} pesos. Total acumulado: {total} pesos.")
-        else:
-            await update.message.reply_text("⚠️ Ingresa un número entre 1 y 365.")
-    except ValueError:
-        await update.message.reply_text("⚠️ Ingresa un número válido.")
+    if text == f"CONFIRMAR {user_id}":
+        delete_user_savings(user_id)
+        await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
+    else:
+        await update.message.reply_text("⚠️ Comando no reconocido. Usa `/start` para ver las opciones.")
 
 # Iniciar el bot
 if __name__ == "__main__":
