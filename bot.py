@@ -94,18 +94,19 @@ def get_total_savings(user_id):
         return 0
 
 # Obtener números guardados por usuario
-def get_savings(user_id):
+def get_savings_summary(user_id):
     try:
         conn = connect_db()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT amount FROM savings WHERE user_id = %s ORDER BY date DESC", (user_id,))
-            data = cursor.fetchall()
+            cursor.execute("SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM savings WHERE user_id = %s", (user_id,))
+            total, days_saved = cursor.fetchone()
+            cursor.close()
             conn.close()
-            return [x[0] for x in data]
+            return total, days_saved
     except Exception as e:
-        logging.error(f"❌ Error al obtener el historial de ahorros para el usuario {user_id}: {e}")
-        return []
+        logging.error(f"❌ Error al obtener el total ahorrado para el usuario {user_id}: {e}")
+        return 0, 0
 
 # Eliminar todos los registros de ahorro de un usuario
 def delete_user_savings(user_id):
