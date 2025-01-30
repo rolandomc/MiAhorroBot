@@ -127,43 +127,64 @@ def get_unique_random_number(user_id):
     available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
     return random.choice(available_numbers) if available_numbers else None
 
-# Capturar números ingresados manualmente y verificar si ya existen
+# Comando /start con menú interactivo
+async def start(update: Update, context: CallbackContext):
+    user_id = update.message.chat.id
+    keyboard = [
+        [InlineKeyboardButton("Ingresar número manualmente", callback_data=f"ingresar_numero")],
+        [InlineKeyboardButton("Ver total ahorrado", callback_data=f"ver_historial")],
+        [InlineKeyboardButton("Generar número aleatorio", callback_data=f"generar_numero")],
+        [InlineKeyboardButton("Programar mensajes diarios", callback_data=f"programar_mensajes")],
+        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data=f"confirmar_borrar")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`\nElige una opción:", reply_markup=reply_markup)
+
+# Manejo de botones del menú
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.message.chat.id
+
+    if "ingresar_numero" in query.data:
+        await query.message.reply_text("✍ Ingresa uno o varios números separados por comas:")
+    elif "ver_historial" in query.data:
+        total = get_total_savings(user_id)
+        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.")
+    elif "generar_numero" in query.data:
+        amount = get_unique_random_number(user_id)
+        if amount is not None:
+            save_savings(user_id, amount)
+            total = get_total_savings(user_id)
+            await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado. Total acumulado: {total} pesos.")
+        else:
+            await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+    elif "confirmar_borrar" in query.data:
+        await query.message.reply_text(f"⚠️ ¿Seguro que quieres borrar todos tus ahorros? Escribe `CONFIRMAR` para proceder.")
+
+# Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
     text = update.message.text.strip()
 
-    # Dividir los números ingresados por comas y eliminar espacios
-    numbers = text.split(",")
-    numbers = [num.strip() for num in numbers if num.strip().isdigit()]
+    if text == "CONFIRMAR":
+        delete_user_savings(user_id)
+        await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
+        return
 
+    numbers = [int(num.strip()) for num in text.split(",") if num.strip().isdigit()]
     if not numbers:
         await update.message.reply_text("⚠️ Ingresa uno o varios números válidos separados por comas.")
         return
 
     existing_numbers = get_savings(user_id)
-    saved_numbers = []
-    ignored_numbers = []
+    for amount in numbers:
+        if amount not in existing_numbers and 1 <= amount <= 365:
+            save_savings(user_id, amount)
 
-    for num in numbers:
-        amount = int(num)
-        if 1 <= amount <= 365:
-            if amount not in existing_numbers:
-                save_savings(user_id, amount)
-                saved_numbers.append(amount)
-            else:
-                ignored_numbers.append(amount)
-        else:
-            ignored_numbers.append(amount)
-
-    # Mensajes de respuesta
-    response = ""
-    if saved_numbers:
-        total = get_total_savings(user_id)
-        response += f"✅ Se han guardado: {', '.join(map(str, saved_numbers))} pesos. Total acumulado: {total} pesos.\n"
-    if ignored_numbers:
-        response += f"⚠️ Estos números ya estaban guardados o no son válidos: {', '.join(map(str, ignored_numbers))}."
-
-    await update.message.reply_text(response)
+    total = get_total_savings(user_id)
+    await update.message.reply_text(f"✅ Se guardaron los números. Total acumulado: {total} pesos.")
 
 # Iniciar el bot
 if __name__ == "__main__":
@@ -173,6 +194,6 @@ if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.TEXT, handle_message))  # <-- Se corrige el filtro aquí
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     app.run_polling()
