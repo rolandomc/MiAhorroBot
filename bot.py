@@ -9,6 +9,8 @@ from datetime import datetime
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, CallbackContext
+import time
+print("Zona horaria del servidor:", time.tzname)
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO)
