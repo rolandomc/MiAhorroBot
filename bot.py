@@ -144,10 +144,10 @@ async def button(update: Update, context: CallbackContext):
     await query.answer()
     user_id = query.message.chat.id
 
-    if "ver_historial" in query.data:
+    if query.data == "ver_historial":
         total, days_saved = get_savings_summary(user_id)
         await query.message.reply_text(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
-    elif "generar_numero" in query.data:
+    elif query.data == "generar_numero":
         amount = get_unique_random_number(user_id)
         if amount:
             save_savings(user_id, amount)
@@ -155,6 +155,8 @@ async def button(update: Update, context: CallbackContext):
             await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         else:
             await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+    elif query.data == "programar_mensajes":
+        await query.message.reply_text("⏰ Escribe la hora en formato 24H (ejemplo: `08:00` para 8 AM o `18:30` para 6:30 PM).")
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
