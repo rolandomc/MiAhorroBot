@@ -64,20 +64,6 @@ def init_db():
     except Exception as e:
         logging.error(f"❌ Error al inicializar la base de datos: {e}")
 
-# Obtener usuarios registrados
-def get_users():
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT user_id FROM savings")
-            users = [row[0] for row in cursor.fetchall()]
-            conn.close()
-            return users
-    except Exception as e:
-        logging.error(f"❌ Error al obtener usuarios registrados: {e}")
-        return []
-
 # Obtener números guardados por usuario
 def get_savings(user_id):
     try:
@@ -133,7 +119,8 @@ async def start(update: Update, context: CallbackContext):
         [InlineKeyboardButton("Ingresar número manualmente", callback_data="ingresar_numero")],
         [InlineKeyboardButton("Ver total ahorrado", callback_data="ver_historial")],
         [InlineKeyboardButton("Generar número aleatorio", callback_data="generar_numero")],
-        [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")]
+        [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")],
+        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data="confirmar_borrar")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
@@ -171,7 +158,7 @@ async def handle_message(update: Update, context: CallbackContext):
     total, days_saved = get_savings_summary(user_id)
     await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
 
-# Enviar mensaje automático diario
+# Función para enviar el mensaje diario
 async def daily_savings():
     bot = app.bot
     users = get_users()
@@ -183,9 +170,11 @@ async def daily_savings():
             await bot.send_message(chat_id=user_id, text=f"💰 Hoy debes ahorrar: {amount} pesos\n📊 Acumulado total: {total} pesos.")
 
 # Programar mensajes diarios
-def schedule_daily_savings():
-    schedule.every().day.at("08:00").do(lambda: asyncio.create_task(daily_savings()))
-    logging.info("✅ Mensajes programados a las 08:00 AM.")
+def schedule_daily_savings(hour):
+    schedule.clear()  # Limpia tareas anteriores para evitar duplicados
+    schedule.every().day.at(hour).do(lambda: asyncio.create_task(daily_savings()))
+    logging.info(f"✅ Mensaje programado para enviarse todos los días a las {hour}.")
+    return hour  # Retornar la hora programada para confirmación
 
 # Iniciar el bot
 if __name__ == "__main__":
@@ -196,7 +185,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
-
-    schedule_daily_savings()
 
     app.run_polling()
