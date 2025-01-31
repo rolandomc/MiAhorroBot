@@ -86,71 +86,69 @@ async def start(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
 
-# Función de botones del menú y comandos
+# ✅ Función corregida para manejar correctamente `update.message` y `update.callback_query`
 async def execute_action(update: Update, context: CallbackContext, action: str):
-    user_id = update.message.chat.id if update.message else update.callback_query.message.chat.id
+    if update.callback_query:
+        query = update.callback_query
+        chat_id = query.message.chat.id
+        send_message = query.message.reply_text
+        await query.answer()  # Cierra la animación del botón
+    elif update.message:
+        chat_id = update.message.chat.id
+        send_message = update.message.reply_text
+    else:
+        return
 
     if action == "ingresar_numero":
-        await update.message.reply_text("✍ Ingresa uno o varios números separados por comas:")
-        context.user_data["esperando_numeros"] = True  # Marca que el usuario debe ingresar números
+        await send_message("✍ Ingresa uno o varios números separados por comas:")
+        context.user_data["esperando_numeros"] = True
 
     elif action == "ver_historial":
-        total, days_saved = get_savings_summary(user_id)
-        await update.message.reply_text(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+        total, days_saved = get_savings_summary(chat_id)
+        await send_message(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
 
     elif action == "generar_numero":
-        amount = get_unique_random_number(user_id)
+        amount = get_unique_random_number(chat_id)
         if amount:
-            save_savings(user_id, amount)
-            total, days_saved = get_savings_summary(user_id)
-            await update.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+            save_savings(chat_id, amount)
+            total, days_saved = get_savings_summary(chat_id)
+            await send_message(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         else:
-            await update.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+            await send_message("⚠️ Ya se han guardado todos los números entre 1 y 365.")
 
     elif action == "borrar_datos":
-        await update.message.reply_text(f"⚠️ Escribe 'CONFIRMAR' para borrar todos tus ahorros.")
-        context.user_data["esperando_confirmacion"] = True  # Marca que el usuario debe confirmar
+        await send_message(f"⚠️ Escribe 'CONFIRMAR' para borrar todos tus ahorros.")
+        context.user_data["esperando_confirmacion"] = True
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
-    user_id = update.message.chat.id
+    chat_id = update.message.chat.id
     text = update.message.text.strip()
 
     if context.user_data.get("esperando_numeros", False):
         numbers = [int(num) for num in text.split(",") if num.strip().isdigit()]
         for amount in numbers:
-            save_savings(user_id, amount)
+            save_savings(chat_id, amount)
 
-        total, days_saved = get_savings_summary(user_id)
+        total, days_saved = get_savings_summary(chat_id)
         await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         context.user_data["esperando_numeros"] = False
 
     elif context.user_data.get("esperando_confirmacion", False) and text == "CONFIRMAR":
         conn = connect_db()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM savings WHERE user_id = %s", (user_id,))
+        cursor.execute("DELETE FROM savings WHERE user_id = %s", (chat_id,))
         conn.commit()
         conn.close()
         await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
         context.user_data["esperando_confirmacion"] = False
-
-# Enviar mensaje automático diario
-async def daily_savings():
-    bot = app.bot
-    users = get_users()
-    for user_id in users:
-        amount = get_unique_random_number(user_id)
-        if amount:
-            save_savings(user_id, amount)
-            total, days_saved = get_savings_summary(user_id)
-            await bot.send_message(chat_id=user_id, text=f"💰 Hoy debes ahorrar: {amount} pesos\n📊 Acumulado total: {total} pesos.")
 
 # Programar mensajes diarios
 def schedule_daily_savings():
     schedule.every().day.at("08:00").do(lambda: asyncio.create_task(daily_savings()))
     logging.info("✅ Mensajes programados a las 08:00 AM.")
 
-# Asignar los comandos para que coincidan con las acciones del menú
+# ✅ Asignar los comandos para que coincidan con las acciones del menú
 async def command_handler(update: Update, context: CallbackContext):
     command = update.message.text.lower().strip("/")
     if command in ["start", "historial", "borrar", "generar", "programar"]:
