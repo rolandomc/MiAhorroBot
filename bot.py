@@ -5,6 +5,7 @@ import schedule
 import time
 import threading
 import random
+import asyncio
 from datetime import datetime
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -163,6 +164,35 @@ async def handle_message(update: Update, context: CallbackContext):
     total, days_saved = get_savings_summary(user_id)
     await update.message.reply_text(f"✅ Se guardaron los números.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
 
+# Función para enviar el mensaje diario
+async def daily_savings():
+    amount = get_unique_random_number(user_id)
+    if amount is not None:
+        save_savings(user_id, amount)
+        total = get_total_savings(user_id)
+        bot = app.bot
+        await bot.send_message(chat_id=CHAT_ID, text=f"💰 Hoy debes ahorrar: {amount} pesos\n📊 Acumulado total: {total} pesos.")
+    else:
+        logging.info("⚠️ No quedan números disponibles para ahorrar.")
+
+# Función para programar mensajes diarios
+def schedule_daily_savings(hour):
+    schedule.clear()  # Limpia tareas anteriores para evitar duplicados
+    schedule.every().day.at(hour).do(lambda: asyncio.run(daily_savings()))
+    logging.info(f"✅ Mensaje programado para enviarse todos los días a las {hour}.")
+
+print("📅 Tareas programadas:", schedule.get_jobs())
+
+# Ejecutar el scheduler en un hilo independiente
+def run_scheduler():
+    while True:
+        schedule.run_pending()
+        time.sleep(30)  # Reducido a 30 segundos para mejorar la precisión
+
+# Iniciar el scheduler en un hilo separado
+thread = threading.Thread(target=run_scheduler, daemon=True)
+thread.start()
+
 # Iniciar el bot
 if __name__ == "__main__":
     logging.info("🚀 Iniciando el bot de ahorro...")
@@ -174,3 +204,6 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     app.run_polling()
+
+    await bot.send_message(chat_id=CHAT_ID, text="📢 Prueba de mensaje automático")
+
