@@ -107,6 +107,19 @@ def save_savings(user_id, amount):
     except Exception as e:
         logging.error(f"❌ Error al guardar el ahorro: {e}")
 
+# Borrar todos los ahorros de un usuario
+def delete_savings(user_id):
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM savings WHERE user_id = %s", (user_id,))
+            conn.commit()
+            conn.close()
+            logging.info(f"🗑️ Ahorros eliminados para el usuario {user_id}.")
+    except Exception as e:
+        logging.error(f"❌ Error al borrar los ahorros: {e}")
+
 # Comando /start
 async def start(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
@@ -143,12 +156,14 @@ async def button(update: Update, context: CallbackContext):
         else:
             await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
 
-# Programar mensajes diarios
-def schedule_daily_savings(hour="08:00"):
-    schedule.every().day.at(hour).do(lambda: asyncio.create_task(daily_savings()))
-    logging.info(f"✅ Mensajes programados a las {hour}.")
+    elif query.data == "borrar_datos":
+        await query.message.reply_text("⚠️ Escribe `CONFIRMAR` para borrar todos tus ahorros.")
 
-# Capturar números ingresados manualmente
+    elif query.data == "programar_mensajes":
+        await query.message.reply_text("⏰ Ingresa la hora en formato 24H (ejemplo: 08:00 o 18:30):")
+        context.user_data["esperando_hora"] = True
+
+# Capturar números ingresados manualmente y confirmar borrado
 async def handle_message(update: Update, context: CallbackContext):
     chat_id = update.message.chat.id
     text = update.message.text.strip()
@@ -157,10 +172,18 @@ async def handle_message(update: Update, context: CallbackContext):
         numbers = [int(num) for num in text.split(",") if num.strip().isdigit()]
         for amount in numbers:
             save_savings(chat_id, amount)
-
         total, days_saved = get_savings_summary(chat_id)
         await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         context.user_data["esperando_numeros"] = False
+
+    elif context.user_data.get("esperando_hora", False):
+        schedule.every().day.at(text).do(lambda: asyncio.create_task(daily_savings()))
+        await update.message.reply_text(f"✅ Mensajes programados a las {text} diariamente.")
+        context.user_data["esperando_hora"] = False
+
+    elif text == "CONFIRMAR":
+        delete_savings(chat_id)
+        await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
 
 # Iniciar el bot
 if __name__ == "__main__":
@@ -171,7 +194,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
-
-    schedule_daily_savings()
 
     app.run_polling()
