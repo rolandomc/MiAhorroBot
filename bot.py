@@ -73,6 +73,40 @@ def get_savings_summary(user_id):
         logging.error(f"❌ Error al obtener ahorros: {e}")
         return 0, 0
 
+# Obtener números guardados por usuario
+def get_savings(user_id):
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT amount FROM savings WHERE user_id = %s ORDER BY date DESC", (user_id,))
+            data = cursor.fetchall()
+            conn.close()
+            return [x[0] for x in data]
+    except Exception as e:
+        logging.error(f"❌ Error al obtener ahorros del usuario {user_id}: {e}")
+        return []
+
+# Generar un número aleatorio único
+def get_unique_random_number(user_id):
+    saved_numbers = get_savings(user_id)
+    available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
+    return random.choice(available_numbers) if available_numbers else None
+
+# Guardar número en la base de datos
+def save_savings(user_id, amount):
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
+                           (user_id, datetime.now().date(), amount))
+            conn.commit()
+            conn.close()
+            logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
+    except Exception as e:
+        logging.error(f"❌ Error al guardar el ahorro: {e}")
+
 # Comando /start
 async def start(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
@@ -86,39 +120,33 @@ async def start(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
 
-# ✅ Función corregida para manejar correctamente `update.message` y `update.callback_query`
-async def execute_action(update: Update, context: CallbackContext, action: str):
-    if update.callback_query:
-        query = update.callback_query
-        chat_id = query.message.chat.id
-        send_message = query.message.reply_text
-        await query.answer()  # Cierra la animación del botón
-    elif update.message:
-        chat_id = update.message.chat.id
-        send_message = update.message.reply_text
-    else:
-        return
+# Manejo de botones del menú
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
 
-    if action == "ingresar_numero":
-        await send_message("✍ Ingresa uno o varios números separados por comas:")
+    if query.data == "ingresar_numero":
+        await query.message.reply_text("✍ Ingresa uno o varios números separados por comas:")
         context.user_data["esperando_numeros"] = True
 
-    elif action == "ver_historial":
+    elif query.data == "ver_historial":
         total, days_saved = get_savings_summary(chat_id)
-        await send_message(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
 
-    elif action == "generar_numero":
+    elif query.data == "generar_numero":
         amount = get_unique_random_number(chat_id)
         if amount:
             save_savings(chat_id, amount)
             total, days_saved = get_savings_summary(chat_id)
-            await send_message(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+            await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         else:
-            await send_message("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+            await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
 
-    elif action == "borrar_datos":
-        await send_message(f"⚠️ Escribe 'CONFIRMAR' para borrar todos tus ahorros.")
-        context.user_data["esperando_confirmacion"] = True
+# Programar mensajes diarios
+def schedule_daily_savings(hour="08:00"):
+    schedule.every().day.at(hour).do(lambda: asyncio.create_task(daily_savings()))
+    logging.info(f"✅ Mensajes programados a las {hour}.")
 
 # Capturar números ingresados manualmente
 async def handle_message(update: Update, context: CallbackContext):
@@ -134,28 +162,6 @@ async def handle_message(update: Update, context: CallbackContext):
         await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
         context.user_data["esperando_numeros"] = False
 
-    elif context.user_data.get("esperando_confirmacion", False) and text == "CONFIRMAR":
-        conn = connect_db()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM savings WHERE user_id = %s", (chat_id,))
-        conn.commit()
-        conn.close()
-        await update.message.reply_text("✅ Se han eliminado todos tus ahorros.")
-        context.user_data["esperando_confirmacion"] = False
-
-# Programar mensajes diarios
-def schedule_daily_savings():
-    schedule.every().day.at("08:00").do(lambda: asyncio.create_task(daily_savings()))
-    logging.info("✅ Mensajes programados a las 08:00 AM.")
-
-# ✅ Asignar los comandos para que coincidan con las acciones del menú
-async def command_handler(update: Update, context: CallbackContext):
-    command = update.message.text.lower().strip("/")
-    if command in ["start", "historial", "borrar", "generar", "programar"]:
-        await execute_action(update, context, action=command)
-    else:
-        await update.message.reply_text("⚠️ Comando no reconocido. Usa /start para ver las opciones.")
-
 # Iniciar el bot
 if __name__ == "__main__":
     logging.info("🚀 Iniciando el bot de ahorro...")
@@ -163,9 +169,9 @@ if __name__ == "__main__":
 
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler(["historial", "borrar", "generar", "programar"], command_handler))
-    app.add_handler(CallbackQueryHandler(lambda update, context: execute_action(update, context, update.callback_query.data)))
+    app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
     schedule_daily_savings()
+
     app.run_polling()
