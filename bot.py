@@ -123,15 +123,18 @@ async def send_daily_savings(application):
                 )
                 logging.info(f"📤 Mensaje enviado a {user_id} con el número {amount}.")
 
-# Comando /start
+# Comando /start con el menú original
 async def start(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
     keyboard = [
+        [InlineKeyboardButton("Ingresar número manualmente", callback_data="ingresar_numero")],
+        [InlineKeyboardButton("Ver total ahorrado", callback_data="ver_historial")],
+        [InlineKeyboardButton("Generar número aleatorio", callback_data="generar_numero")],
         [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")],
-        [InlineKeyboardButton("Generar número ahora", callback_data="generar_numero")]
+        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data="borrar_datos")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🤖 ¡Bienvenido al Bot de Ahorro!\n\nConfigura tu horario y comienza a recibir números de ahorro diarios.", reply_markup=reply_markup)
+    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
 
 # Manejo de botones
 async def button(update: Update, context: CallbackContext):
@@ -142,14 +145,6 @@ async def button(update: Update, context: CallbackContext):
     if query.data == "programar_mensajes":
         await query.message.reply_text("⏰ Ingresa la hora en formato 24H (ejemplo: 08:00 o 18:30):")
         context.user_data["esperando_hora"] = True
-
-    elif query.data == "generar_numero":
-        amount = get_unique_random_number(chat_id)
-        if amount:
-            save_savings(chat_id, amount)
-            await query.message.reply_text(f"🎲 Tu número de ahorro es: *{amount}*")
-        else:
-            await query.message.reply_text("⚠️ Ya has guardado todos los números entre 1 y 365.")
 
 # Capturar horario ingresado por el usuario
 async def handle_message(update: Update, context: CallbackContext):
