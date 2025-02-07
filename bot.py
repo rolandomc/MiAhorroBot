@@ -58,26 +58,23 @@ def init_db():
         conn.close()
         logging.info("✅ Base de datos inicializada correctamente.")
 
-# Obtener total ahorrado y días de ahorro
-def get_savings_summary(user_id):
-    conn = connect_db()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM savings WHERE user_id = %s", (user_id,))
-        total, days_saved = cursor.fetchone()
-        conn.close()
-        return total, days_saved
-    return 0, 0
-
-# Borrar todos los ahorros de un usuario
-def delete_savings(user_id):
-    conn = connect_db()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM savings WHERE user_id = %s", (user_id,))
-        conn.commit()
-        conn.close()
-        logging.info(f"🗑️ Ahorros eliminados para el usuario {user_id}.")
+# Guardar la hora programada en la base de datos en formato TIME
+def save_schedule(user_id, schedule_time):
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            formatted_time = datetime.strptime(schedule_time, "%H:%M").time()
+            cursor.execute(
+                "INSERT INTO scheduled_messages (user_id, schedule_time) VALUES (%s, %s) "
+                "ON CONFLICT (user_id) DO UPDATE SET schedule_time = EXCLUDED.schedule_time",
+                (user_id, formatted_time)
+            )
+            conn.commit()
+            conn.close()
+            logging.info(f"✅ Mensajes programados para {user_id} a las {formatted_time}.")
+    except Exception as e:
+        logging.error(f"❌ Error al guardar la hora programada: {e}")
 
 # Obtener usuarios con horarios programados
 def get_scheduled_users():
@@ -132,18 +129,15 @@ async def send_daily_savings(application):
                 )
                 logging.info(f"📤 Mensaje enviado a {user_id} con el número {amount}.")
 
-# Comando /start con botones que ahora sí funcionan
+# Comando /start con el menú original
 async def start(update: Update, context: CallbackContext):
     user_id = update.message.chat.id
     keyboard = [
-        [InlineKeyboardButton("Ingresar número manualmente", callback_data="ingresar_numero")],
-        [InlineKeyboardButton("Ver total ahorrado", callback_data="ver_historial")],
-        [InlineKeyboardButton("Generar número aleatorio", callback_data="generar_numero")],
         [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")],
-        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data="borrar_datos")]
+        [InlineKeyboardButton("Generar número ahora", callback_data="generar_numero")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
+    await update.message.reply_text("🤖 ¡Bienvenido al Bot de Ahorro!\n\nConfigura tu horario y comienza a recibir números de ahorro diarios.", reply_markup=reply_markup)
 
 # Manejo de botones
 async def button(update: Update, context: CallbackContext):
@@ -151,21 +145,24 @@ async def button(update: Update, context: CallbackContext):
     await query.answer()
     chat_id = query.message.chat.id
 
-    if query.data == "ver_historial":
-        total, days_saved = get_savings_summary(chat_id)
-        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+    if query.data == "programar_mensajes":
+        await query.message.reply_text("⏰ Ingresa la hora en formato 24H (ejemplo: 08:00 o 18:30):")
+        context.user_data["esperando_hora"] = True
 
-    elif query.data == "generar_numero":
-        amount = get_unique_random_number(chat_id)
-        if amount:
-            save_savings(chat_id, amount)
-            await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.")
-        else:
-            await query.message.reply_text("⚠️ Ya has guardado todos los números entre 1 y 365.")
+# Capturar horario ingresado por el usuario
+async def handle_message(update: Update, context: CallbackContext):
+    chat_id = update.message.chat.id
+    text = update.message.text.strip()
 
-    elif query.data == "borrar_datos":
-        delete_savings(chat_id)
-        await query.message.reply_text("✅ Se han eliminado todos tus ahorros.")
+    if context.user_data.get("esperando_hora", False):
+        try:
+            horario = text.strip()
+            save_schedule(chat_id, horario)
+            await update.message.reply_text(f"✅ Has programado los mensajes diarios a las {horario}.")
+        except ValueError:
+            await update.message.reply_text("⚠️ Formato incorrecto. Ingresa la hora en formato HH:MM (ejemplo: 08:00).")
+        
+        context.user_data["esperando_hora"] = False
 
 # Corrección del scheduler
 def start_scheduler(application):
@@ -188,7 +185,8 @@ if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
-    
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
+
     scheduler_thread = threading.Thread(target=start_scheduler, args=(app,))
     scheduler_thread.daemon = True
     scheduler_thread.start()
