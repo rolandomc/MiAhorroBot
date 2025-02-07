@@ -1,7 +1,6 @@
 import os
 import logging
 import psycopg2
-import schedule
 import time
 import threading
 import random
@@ -37,6 +36,38 @@ def connect_db():
     except Exception as e:
         logging.error(f"❌ Error al conectar a la base de datos: {e}")
         return None
+
+# Inicializar la base de datos
+def init_db():
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS savings (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                date DATE NOT NULL,
+                amount INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS scheduled_messages (
+                user_id BIGINT PRIMARY KEY,
+                schedule_time TIME NOT NULL
+            );
+        ''')
+        conn.commit()
+        conn.close()
+        logging.info("✅ Base de datos inicializada correctamente.")
+
+# Guardar hora de programación
+def save_schedule(user_id, schedule_time):
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO scheduled_messages (user_id, schedule_time) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET schedule_time = EXCLUDED.schedule_time",
+                       (user_id, schedule_time))
+        conn.commit()
+        conn.close()
+        logging.info(f"✅ Mensajes programados para {user_id} a las {schedule_time}.")
 
 # Obtener usuarios con horarios programados
 def get_scheduled_users():
@@ -91,7 +122,45 @@ async def send_daily_savings(application):
                 )
                 logging.info(f"📤 Mensaje enviado a {user_id} con el número {amount}.")
 
-# Función para ejecutar el proceso de envío automático en un hilo separado
+# Comando /start con el menú original
+async def start(update: Update, context: CallbackContext):
+    user_id = update.message.chat.id
+    keyboard = [
+        [InlineKeyboardButton("Ingresar número manualmente", callback_data="ingresar_numero")],
+        [InlineKeyboardButton("Ver total ahorrado", callback_data="ver_historial")],
+        [InlineKeyboardButton("Generar número aleatorio", callback_data="generar_numero")],
+        [InlineKeyboardButton("Programar mensajes diarios", callback_data="programar_mensajes")],
+        [InlineKeyboardButton("🗑️ Borrar mis ahorros", callback_data="borrar_datos")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
+
+# Manejo de botones
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+
+    if query.data == "programar_mensajes":
+        await query.message.reply_text("⏰ Ingresa la hora en formato 24H (ejemplo: 08:00 o 18:30):")
+        context.user_data["esperando_hora"] = True
+
+# Capturar horario ingresado por el usuario
+async def handle_message(update: Update, context: CallbackContext):
+    chat_id = update.message.chat.id
+    text = update.message.text.strip()
+
+    if context.user_data.get("esperando_hora", False):
+        try:
+            horario = datetime.strptime(text.strip(), "%H:%M").time()
+            save_schedule(chat_id, horario)
+            await update.message.reply_text(f"✅ Has programado los mensajes diarios a las {text}.")
+        except ValueError:
+            await update.message.reply_text("⚠️ Formato incorrecto. Ingresa la hora en formato HH:MM (ejemplo: 08:00).")
+        
+        context.user_data["esperando_hora"] = False
+
+# Corrección del scheduler
 def start_scheduler(application):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -102,14 +171,18 @@ def start_scheduler(application):
             future.result()  # Bloquea hasta que la tarea se complete
         except Exception as e:
             logging.error(f"❌ Error en el scheduler: {e}")
-        time.sleep(60)  # Verificar cada minuto
+        time.sleep(60)
 
-# Iniciar el bot con la automatización agregada
+# Iniciar el bot
 if __name__ == "__main__":
     logging.info("🚀 Iniciando el bot de ahorro...")
-    
+    init_db()
+
     app = Application.builder().token(TOKEN).build()
-    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.TEXT, handle_message))
+
     # Iniciar el hilo de programación de tareas
     scheduler_thread = threading.Thread(target=start_scheduler, args=(app,))
     scheduler_thread.daemon = True
