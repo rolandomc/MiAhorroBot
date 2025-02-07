@@ -19,9 +19,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 DB_URL = os.getenv("DATABASE_URL")
 
 if not TOKEN or not DB_URL:
-    raise ValueError("
-
-⚠️ ERROR: Las variables de entorno TELEGRAM_BOT_TOKEN o DATABASE_URL no están configuradas.")
+    raise ValueError("⚠️ ERROR: Las variables de entorno TELEGRAM_BOT_TOKEN o DATABASE_URL no están configuradas.")
 
 # Conectar a PostgreSQL
 def connect_db():
@@ -147,22 +145,6 @@ async def button(update: Update, context: CallbackContext):
     if query.data == "programar_mensajes":
         await query.message.reply_text("⏰ Ingresa la hora en formato 24H (ejemplo: 08:00 o 18:30):")
         context.user_data["esperando_hora"] = True
-
-    elif query.data == "ver_historial":
-        total, days_saved = get_savings_summary(chat_id)
-        await query.message.reply_text(f"📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
-
-    elif query.data == "generar_numero":
-        amount = get_unique_random_number(chat_id)
-        if amount:
-            save_savings(chat_id, amount)
-            total, days_saved = get_savings_summary(chat_id)
-            await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
-        else:
-            await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
-
-    elif query.data == "borrar_datos":
-        await query.message.reply_text("⚠️ Escribe `CONFIRMAR` para borrar todos tus ahorros.")
 
 # Capturar horario ingresado por el usuario
 async def handle_message(update: Update, context: CallbackContext):
