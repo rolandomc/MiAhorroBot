@@ -33,7 +33,6 @@ def connect_db():
             port=result.port,
             sslmode="require"
         )
-        logging.info("✅ Conectado a la base de datos correctamente.")
         return conn
     except Exception as e:
         logging.error(f"❌ Error al conectar a la base de datos: {e}")
@@ -41,90 +40,78 @@ def connect_db():
 
 # Inicializar la base de datos
 def init_db():
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS savings (
-                    id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    date DATE NOT NULL,
-                    amount INTEGER NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS scheduled_messages (
-                    user_id BIGINT PRIMARY KEY,
-                    schedule_time TIME NOT NULL
-                );
-            ''')
-            conn.commit()
-            conn.close()
-            logging.info("✅ Base de datos inicializada correctamente.")
-    except Exception as e:
-        logging.error(f"❌ Error al inicializar la base de datos: {e}")
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS savings (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                date DATE NOT NULL,
+                amount INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS scheduled_messages (
+                user_id BIGINT PRIMARY KEY,
+                schedule_time TIME NOT NULL
+            );
+        ''')
+        conn.commit()
+        conn.close()
+        logging.info("✅ Base de datos inicializada correctamente.")
 
-# Guardar hora de programación en la base de datos
+# Guardar hora de programación
 def save_schedule(user_id, schedule_time):
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO scheduled_messages (user_id, schedule_time) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET schedule_time = EXCLUDED.schedule_time",
-                           (user_id, schedule_time))
-            conn.commit()
-            conn.close()
-            logging.info(f"✅ Mensajes programados para {user_id} a las {schedule_time}.")
-    except Exception as e:
-        logging.error(f"❌ Error al programar mensajes: {e}")
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO scheduled_messages (user_id, schedule_time) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET schedule_time = EXCLUDED.schedule_time",
+                       (user_id, schedule_time))
+        conn.commit()
+        conn.close()
+        logging.info(f"✅ Mensajes programados para {user_id} a las {schedule_time}.")
 
 # Obtener usuarios con horarios programados
 def get_scheduled_users():
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id, schedule_time FROM scheduled_messages")
-            data = cursor.fetchall()
-            conn.close()
-            return data
-    except Exception as e:
-        logging.error(f"❌ Error al obtener usuarios programados: {e}")
-        return []
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, schedule_time FROM scheduled_messages")
+        data = cursor.fetchall()
+        conn.close()
+        return data
+    return []
 
 # Obtener número único para ahorro
 def get_unique_random_number(user_id):
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT amount FROM savings WHERE user_id = %s ORDER BY date DESC", (user_id,))
-            saved_numbers = [x[0] for x in cursor.fetchall()]
-            available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
-            conn.close()
-            return random.choice(available_numbers) if available_numbers else None
-    except Exception as e:
-        logging.error(f"❌ Error al obtener número aleatorio: {e}")
-        return None
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT amount FROM savings WHERE user_id = %s ORDER BY date DESC", (user_id,))
+        saved_numbers = [x[0] for x in cursor.fetchall()]
+        available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
+        conn.close()
+        return random.choice(available_numbers) if available_numbers else None
+    return None
 
 # Guardar ahorro
 def save_savings(user_id, amount):
-    try:
-        conn = connect_db()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
-                           (user_id, datetime.now().date(), amount))
-            conn.commit()
-            conn.close()
-            logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
-    except Exception as e:
-        logging.error(f"❌ Error al guardar el ahorro: {e}")
+    conn = connect_db()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO savings (user_id, date, amount) VALUES (%s, %s, %s)", 
+                       (user_id, datetime.now().date(), amount))
+        conn.commit()
+        conn.close()
+        logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
 
 # Enviar mensajes automáticos
 async def send_daily_savings(application):
     scheduled_users = get_scheduled_users()
+    now = datetime.now().strftime("%H:%M")
+    
+    logging.info(f"🕒 Verificando mensajes programados... Hora actual: {now}")
+
     for user_id, schedule_time in scheduled_users:
-        now = datetime.now().strftime("%H:%M")
         if now == schedule_time.strftime("%H:%M"):
             amount = get_unique_random_number(user_id)
             if amount:
@@ -170,14 +157,19 @@ async def handle_message(update: Update, context: CallbackContext):
     text = update.message.text.strip()
 
     if context.user_data.get("esperando_hora", False):
-        save_schedule(chat_id, text)
-        await update.message.reply_text(f"✅ Has programado los mensajes diarios a las {text}.")
+        try:
+            horario = datetime.strptime(text.strip(), "%H:%M").time()
+            save_schedule(chat_id, horario)
+            await update.message.reply_text(f"✅ Has programado los mensajes diarios a las {text}.")
+        except ValueError:
+            await update.message.reply_text("⚠️ Formato incorrecto. Ingresa la hora en formato HH:MM (ejemplo: 08:00).")
+        
         context.user_data["esperando_hora"] = False
 
 # Hilo para ejecución continua
 def start_scheduler(application):
     while True:
-        asyncio.run(send_daily_savings(application))
+        asyncio.run(asyncio.create_task(send_daily_savings(application)))
         time.sleep(60)  # Verificar cada minuto
 
 # Iniciar el bot
