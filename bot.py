@@ -105,7 +105,7 @@ async def button(update: Update, context: CallbackContext):
         if amount:
             if save_savings(chat_id, amount):
                 total, days_saved = get_savings_summary(chat_id)
-                await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+                await query.message.reply_text(f"🎲 Se generó el número {amount} \n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
             else:
                 await query.message.reply_text(f"⚠️ El número {amount} ya estaba guardado. Intentando otro...")
         else:
