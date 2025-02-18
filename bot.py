@@ -173,6 +173,21 @@ async def start(update: Update, context: CallbackContext):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(f"📌 Bienvenido al Bot de Ahorro 💰\n\nUsuario ID: `{user_id}`", reply_markup=reply_markup)
 
+# Comando /gennerar
+async def generate_random_number(update: Update, context: CallbackContext):
+    chat_id = update.message.chat.id
+    amount = get_unique_random_number(chat_id)  # Genera un número único
+
+    if amount:
+        if save_savings(chat_id, amount):  # Guarda solo si no está repetido
+            total, days_saved = get_savings_summary(chat_id)
+            await update.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+        else:
+            await update.message.reply_text(f"⚠️ El número {amount} ya estaba guardado. Intentando otro...")
+    else:
+        await update.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+
+
 # Manejo de botones del menú
 async def button(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -245,6 +260,7 @@ if __name__ == "__main__":
 
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    CommandHandler("generar", generate_random_number)
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
