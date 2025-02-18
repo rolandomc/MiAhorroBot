@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    CommandHandler("generar", generate_random_number)
+    app.add_handler(CommandHandler("generar", generate_random_number))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
