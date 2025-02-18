@@ -89,12 +89,49 @@ def get_savings(user_id):
 
 # Generar un número aleatorio único
 def get_unique_random_number(user_id):
+    """ Genera un número aleatorio que no haya sido guardado previamente """
     saved_numbers = get_savings(user_id)
     available_numbers = [x for x in range(1, 366) if x not in saved_numbers]
+
     return random.choice(available_numbers) if available_numbers else None
 
+async def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat.id
+
+    if query.data == "generar_numero":
+        amount = get_unique_random_number(chat_id)
+        if amount:
+            if save_savings(chat_id, amount):
+                total, days_saved = get_savings_summary(chat_id)
+                await query.message.reply_text(f"🎲 Se generó el número {amount} y se ha guardado.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+            else:
+                await query.message.reply_text(f"⚠️ El número {amount} ya estaba guardado. Intentando otro...")
+        else:
+            await query.message.reply_text("⚠️ Ya se han guardado todos los números entre 1 y 365.")
+
+
 # Guardar número en la base de datos
+def is_number_saved(user_id, amount):
+    """ Verifica si un número ya ha sido guardado por el usuario """
+    try:
+        conn = connect_db()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM savings WHERE user_id = %s AND amount = %s", (user_id, amount))
+            count = cursor.fetchone()[0]
+            conn.close()
+            return count > 0  # Devuelve True si el número ya está guardado
+    except Exception as e:
+        logging.error(f"❌ Error al verificar número guardado: {e}")
+        return False
+
 def save_savings(user_id, amount):
+    """ Guarda el número solo si no está duplicado """
+    if is_number_saved(user_id, amount):
+        logging.info(f"⚠️ El número {amount} ya ha sido guardado previamente para el usuario {user_id}.")
+        return False  # Indica que el número no se guardó por ser duplicado
     try:
         conn = connect_db()
         if conn:
@@ -104,8 +141,11 @@ def save_savings(user_id, amount):
             conn.commit()
             conn.close()
             logging.info(f"✅ Ahorro de {amount} guardado correctamente para el usuario {user_id}.")
+            return True  # Indica que el número se guardó correctamente
     except Exception as e:
         logging.error(f"❌ Error al guardar el ahorro: {e}")
+        return False
+
 
 # Borrar todos los ahorros de un usuario
 def delete_savings(user_id):
@@ -170,10 +210,23 @@ async def handle_message(update: Update, context: CallbackContext):
 
     if context.user_data.get("esperando_numeros", False):
         numbers = [int(num) for num in text.split(",") if num.strip().isdigit()]
+        saved_any = False
+        duplicate_numbers = []
+
         for amount in numbers:
-            save_savings(chat_id, amount)
+            if save_savings(chat_id, amount):
+                saved_any = True
+            else:
+                duplicate_numbers.append(amount)
+
         total, days_saved = get_savings_summary(chat_id)
-        await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+
+        if saved_any:
+            await update.message.reply_text(f"✅ Números guardados.\n📜 Total acumulado: {total} pesos.\n📅 Días ahorrados: {days_saved} días.")
+        
+        if duplicate_numbers:
+            await update.message.reply_text(f"⚠️ Los siguientes números ya estaban guardados y no fueron ingresados nuevamente: {', '.join(map(str, duplicate_numbers))}")
+
         context.user_data["esperando_numeros"] = False
 
     elif context.user_data.get("esperando_hora", False):
